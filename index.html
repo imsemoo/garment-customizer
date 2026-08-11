@@ -392,28 +392,28 @@ const STAGE_W = 560, STAGE_H = 620;
    ribbed crew collar. Paths with class "tint" recolor via fill; shading sits on top. */
 function teeSVG(side) {
   // One silhouette path: L shoulder → neck → R shoulder → R sleeve → R side → hem → L side → L sleeve
-  const silhouette = `M170 112 L226 103 Q280 116 334 103 L390 112
+  const silhouette = `M170 112 L232 102 Q280 112 328 102 L390 112
     L472 175 L446 254 L424 232
     Q430 385 412 538 Q280 554 148 538 Q130 385 136 232
     L114 254 L88 175 Z`;
   const collar = side === 'front'
     ? `<!-- inside of shirt visible through neck opening -->
-       <path d="M226 103 Q280 146 334 103 Q280 118 226 103 Z" fill="rgba(0,0,0,.40)"/>
+       <path d="M232 102 Q280 128 328 102 Q280 112 232 102 Z" fill="rgba(0,0,0,.40)"/>
        <!-- ribbed crew band -->
-       <path class="tint" d="M219 100 Q280 164 341 100 L334 103 Q280 146 226 103 Z" style="filter:brightness(.8)"/>
-       <path d="M219 100 Q280 164 341 100" fill="none" stroke="rgba(0,0,0,.22)" stroke-width="1.6"/>
-       <path d="M226 103 Q280 146 334 103" fill="none" stroke="rgba(0,0,0,.28)" stroke-width="1.2"/>`
-    : `<path d="M230 100 Q280 122 330 100 Q280 108 230 100 Z" fill="rgba(0,0,0,.32)"/>
-       <path class="tint" d="M224 98 Q280 134 336 98 L330 100 Q280 121 230 100 Z" style="filter:brightness(.8)"/>
-       <path d="M224 98 Q280 134 336 98" fill="none" stroke="rgba(0,0,0,.2)" stroke-width="1.6"/>`;
+       <path class="tint" d="M225 99 Q280 141 335 99 L328 102 Q280 128 232 102 Z" style="filter:brightness(.8)"/>
+       <path d="M225 99 Q280 141 335 99" fill="none" stroke="rgba(0,0,0,.22)" stroke-width="1.6"/>
+       <path d="M232 102 Q280 128 328 102" fill="none" stroke="rgba(0,0,0,.28)" stroke-width="1.2"/>`
+    : `<path d="M234 100 Q280 112 326 100 Q280 104 234 100 Z" fill="rgba(0,0,0,.32)"/>
+       <path class="tint" d="M228 97 Q280 121 332 97 L326 100 Q280 112 234 100 Z" style="filter:brightness(.8)"/>
+       <path d="M228 97 Q280 121 332 97" fill="none" stroke="rgba(0,0,0,.2)" stroke-width="1.6"/>`;
   return `
   <svg class="garment" viewBox="0 0 560 620" xmlns="http://www.w3.org/2000/svg">
     <defs>
       <linearGradient id="shade-${side}" x1="0" y1="0" x2="1" y2="0">
-        <stop offset="0" stop-color="#000" stop-opacity=".20"/>
+        <stop offset="0" stop-color="#000" stop-opacity=".12"/>
         <stop offset=".16" stop-color="#000" stop-opacity="0"/>
         <stop offset=".84" stop-color="#000" stop-opacity="0"/>
-        <stop offset="1" stop-color="#000" stop-opacity=".20"/>
+        <stop offset="1" stop-color="#000" stop-opacity=".12"/>
       </linearGradient>
     </defs>
     <!-- garment silhouette -->
@@ -435,11 +435,11 @@ function teeSVG(side) {
     <path d="M173 113 L225 105" stroke="rgba(255,255,255,.10)" stroke-width="3" stroke-linecap="round"/>
     <path d="M387 113 L335 105" stroke="rgba(255,255,255,.10)" stroke-width="3" stroke-linecap="round"/>
     <!-- soft wrinkles -->
-    <path d="M238 330 q8 80 0 165" stroke="rgba(0,0,0,.07)" stroke-width="6" fill="none" stroke-linecap="round"/>
-    <path d="M322 345 q-6 80 2 150" stroke="rgba(0,0,0,.06)" stroke-width="5" fill="none" stroke-linecap="round"/>
-    <path d="M255 495 q30 8 58 2" stroke="rgba(0,0,0,.05)" stroke-width="5" fill="none" stroke-linecap="round"/>
-    <path d="M148 300 q14 6 26 18" stroke="rgba(0,0,0,.06)" stroke-width="5" fill="none" stroke-linecap="round"/>
-    <path d="M412 300 q-14 6 -26 18" stroke="rgba(0,0,0,.06)" stroke-width="5" fill="none" stroke-linecap="round"/>
+    <path d="M238 340 q8 70 0 145" stroke="rgba(0,0,0,.045)" stroke-width="5" fill="none" stroke-linecap="round"/>
+    <path d="M322 355 q-6 70 2 130" stroke="rgba(0,0,0,.04)" stroke-width="5" fill="none" stroke-linecap="round"/>
+    <path d="M255 495 q30 8 58 2" stroke="rgba(0,0,0,.035)" stroke-width="5" fill="none" stroke-linecap="round"/>
+    <path d="M148 300 q14 6 26 18" stroke="rgba(0,0,0,.04)" stroke-width="4" fill="none" stroke-linecap="round"/>
+    <path d="M412 300 q-14 6 -26 18" stroke="rgba(0,0,0,.04)" stroke-width="4" fill="none" stroke-linecap="round"/>
     ${collar}
   </svg>`;
 }
