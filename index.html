@@ -792,7 +792,7 @@ document.getElementById('qty-minus').onclick = () => { qty = Math.max(1, qty - 5
 document.getElementById('qty-plus').onclick = () => { qty += 5; document.getElementById('qty').textContent = qty; updatePrice(); };
 
 /* ---------- Save (backend payload demo) ---------- */
-document.getElementById('btn-save').onclick = () => {
+document.getElementById('btn-save').onclick = async () => {
   sideJSON[currentView] = JSON.stringify(canvas.toJSON());
   const payload = {
     product: 'classic-tee',
@@ -803,10 +803,23 @@ document.getElementById('btn-save').onclick = () => {
       back: sideJSON.back ? JSON.parse(sideJSON.back) : null,
     },
   };
-  /* Production: POST to PHP endpoint —
-     fetch('api/save-design.php', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) }) */
-  console.log('Design payload →', payload);
-  toast('<b>Design saved</b> — JSON payload logged to console (POSTs to PHP in production)');
+  if (location.protocol === 'file:') {
+    console.log('Design payload →', payload);
+    toast('<b>Design payload ready</b> — serve via PHP (php -S) to persist. Logged to console.');
+    return;
+  }
+  try {
+    const res = await fetch('api/save-design.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const body = await res.json();
+    if (body.ok) toast(`<b>Design saved</b> — ID ${body.design_id}`);
+    else toast('Save failed: ' + (body.error || res.status));
+  } catch (err) {
+    toast('Save failed — is the PHP server running?');
+  }
 };
 
 /* ---------- Export mockup PNG ---------- */
