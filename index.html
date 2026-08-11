@@ -230,6 +230,60 @@
   }
   .toast.show { transform: translateX(-50%) translateY(0); }
   .toast b { color: var(--success); }
+  .toast-btn {
+    margin-left: 10px; border: none; cursor: pointer; font-family: inherit;
+    background: var(--accent); color: #fff; font-size: 12.5px; font-weight: 600;
+    border-radius: 8px; padding: 6px 12px;
+  }
+  .toast-btn:hover { filter: brightness(1.15); }
+
+  /* Realistic fabric overlay (multiplies over garment + printed design) */
+  .fabric-overlay {
+    position: absolute; inset: 0;
+    pointer-events: none;
+    mix-blend-mode: multiply;
+  }
+  .fabric-overlay svg { width: 100%; height: 100%; display: block; }
+
+  .toggle-row {
+    display: flex; align-items: center; gap: 9px;
+    margin-top: 12px; font-size: 12.5px; color: var(--muted);
+    cursor: pointer; user-select: none;
+  }
+  .toggle-row input { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; }
+
+  /* 3D preview modal */
+  .modal-3d {
+    position: fixed; inset: 0;
+    background: rgba(10,12,16,.88);
+    backdrop-filter: blur(6px);
+    display: none; place-items: center; z-index: 60;
+  }
+  .modal-3d.show { display: grid; }
+  .modal-card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 16px; padding: 20px;
+    box-shadow: 0 30px 80px rgba(0,0,0,.6);
+    position: relative;
+  }
+  .modal-card h4 { font-size: 15px; font-weight: 700; }
+  .modal-card .hint { font-size: 11.5px; color: var(--muted); margin: 3px 0 12px; }
+  .modal-close {
+    position: absolute; top: 14px; right: 14px;
+    border: none; background: var(--panel-2); color: var(--muted);
+    width: 30px; height: 30px; border-radius: 8px; cursor: pointer;
+    font-size: 15px; line-height: 1;
+  }
+  .modal-close:hover { color: var(--text); }
+  #three-mount {
+    width: min(74vw, 560px); height: min(68vh, 580px);
+    border-radius: 12px; overflow: hidden;
+    background: radial-gradient(ellipse at 50% 35%, #232838 0%, #12141b 75%);
+    display: grid; place-items: center;
+    cursor: grab; touch-action: none;
+  }
+  #three-mount:active { cursor: grabbing; }
+  #three-status { color: var(--muted); font-size: 13px; }
 
   /* Drop overlay */
   .drop-overlay {
@@ -253,6 +307,7 @@
   </div>
   <div class="header-right">
     <div class="price-chip" id="price-chip">Est. per unit <b id="price">$14.99</b></div>
+    <button class="btn btn-ghost" id="btn-3d">◇ 3D View</button>
     <button class="btn btn-ghost" id="btn-save">Save Design</button>
     <button class="btn btn-primary" id="btn-export">⬇ Export Mockup</button>
   </div>
@@ -296,6 +351,7 @@
       <button id="sb-front" title="Bring forward"><svg viewBox="0 0 24 24"><rect x="8" y="4" width="12" height="12" rx="2"/><path d="M4 9v9a2 2 0 002 2h9"/></svg></button>
       <button id="sb-back" title="Send backward"><svg viewBox="0 0 24 24"><rect x="4" y="8" width="12" height="12" rx="2"/><path d="M9 4h9a2 2 0 012 2v9"/></svg></button>
       <button id="sb-dup" title="Duplicate"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 012-2h9"/></svg></button>
+      <button id="sb-removebg" title="Remove background" style="display:none"><svg viewBox="0 0 24 24"><path d="M15 4l5 5-9 9H6v-5l9-9zM13 6l5 5M4 20h16"/></svg></button>
       <div class="vsep"></div>
       <button id="sb-del" class="danger" title="Delete (Del)"><svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m-8 0l1 13h6l1-13"/></svg></button>
     </div>
@@ -320,6 +376,10 @@
       <h3>Garment Color</h3>
       <div class="swatches" id="swatches"></div>
       <div class="color-name">Color: <b id="color-name">White</b></div>
+      <label class="toggle-row">
+        <input type="checkbox" id="realism-toggle" checked>
+        Realistic fabric shading
+      </label>
     </section>
 
     <section class="prop-group" id="text-props">
@@ -376,6 +436,16 @@
 <div class="drop-overlay" id="drop-overlay"><p>Drop your artwork to add it to the design</p></div>
 <div class="toast" id="toast"></div>
 <input type="file" id="file-input" accept="image/png,image/jpeg,image/svg+xml,image/webp" hidden>
+
+<!-- 3D preview modal -->
+<div class="modal-3d" id="modal-3d">
+  <div class="modal-card">
+    <button class="modal-close" id="modal-close">✕</button>
+    <h4>3D Fabric Preview</h4>
+    <div class="hint">Drag to rotate — live render of your current design</div>
+    <div id="three-mount"><span id="three-status">Building preview…</span></div>
+  </div>
+</div>
 
 <script>
 /* =========================================================
