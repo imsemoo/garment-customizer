@@ -730,10 +730,72 @@ function addImageFile(file) {
       canvas.add(img);
       canvas.setActiveObject(img);
       canvas.renderAll();
-      toast('<b>Artwork added</b> — drag to position, corners to resize');
+      if (analyzeBackground(img.getElement())) {
+        toastAction('Solid background detected on your artwork.', 'Remove it', () => removeBackground(img));
+      } else {
+        toast('<b>Artwork added</b> — drag to position, corners to resize');
+      }
     }, { crossOrigin: 'anonymous' });
   };
   reader.readAsDataURL(file);
+}
+
+/* ---------- Background removal (flood fill from borders + edge feather) ---------- */
+function analyzeBackground(el) {
+  const w = el.naturalWidth || el.width, h = el.naturalHeight || el.height;
+  if (!w || !h || w * h > 16_000_000) return null;
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const cx = c.getContext('2d', { willReadFrequently: true });
+  cx.drawImage(el, 0, 0);
+  let d;
+  try { d = cx.getImageData(0, 0, w, h); } catch { return null; }
+  const px = (x, y) => { const i = (y * w + x) * 4; return [d.data[i], d.data[i + 1], d.data[i + 2], d.data[i + 3]]; };
+  const pts = [[0,0],[w-1,0],[0,h-1],[w-1,h-1],[w>>1,0],[w>>1,h-1],[0,h>>1],[w-1,h>>1]];
+  const samples = pts.map(p => px(p[0], p[1]));
+  if (samples.some(s => s[3] < 200)) return null;              // edges already transparent
+  const avg = [0, 1, 2].map(k => samples.reduce((a, s) => a + s[k], 0) / samples.length);
+  const dist = s => Math.hypot(s[0] - avg[0], s[1] - avg[1], s[2] - avg[2]);
+  if (!samples.every(s => dist(s) < 30)) return null;          // background not uniform
+  return { canvas: c, imageData: d, w, h, bg: avg };
+}
+
+function removeBackground(imgObj) {
+  const a = analyzeBackground(imgObj.getElement());
+  if (!a) { toast('No uniform background detected on this image'); return; }
+  const { imageData: d, w, h, bg } = a;
+  const data = d.data, TOL = 38;
+  const visited = new Uint8Array(w * h);
+  const stack = [];
+  const match = i => {
+    const j = i * 4;
+    return Math.hypot(data[j] - bg[0], data[j + 1] - bg[1], data[j + 2] - bg[2]) < TOL;
+  };
+  for (let x = 0; x < w; x++) { stack.push(x, (h - 1) * w + x); }
+  for (let y = 0; y < h; y++) { stack.push(y * w, y * w + w - 1); }
+  while (stack.length) {
+    const i = stack.pop();
+    if (visited[i] || !match(i)) continue;
+    visited[i] = 1;
+    const x = i % w;
+    if (x > 0) stack.push(i - 1);
+    if (x < w - 1) stack.push(i + 1);
+    if (i >= w) stack.push(i - w);
+    if (i < w * (h - 1)) stack.push(i + w);
+  }
+  for (let i = 0; i < w * h; i++) if (visited[i]) data[i * 4 + 3] = 0;
+  for (let i = 0; i < w * h; i++) {                            // 1px feather on kept edge
+    if (visited[i]) continue;
+    const x = i % w;
+    const nearBg = (x > 0 && visited[i - 1]) || (x < w - 1 && visited[i + 1])
+      || (i >= w && visited[i - w]) || (i < w * (h - 1) && visited[i + w]);
+    if (nearBg) data[i * 4 + 3] = Math.min(data[i * 4 + 3], 120);
+  }
+  a.canvas.getContext('2d').putImageData(d, 0, 0);
+  imgObj.setSrc(a.canvas.toDataURL('image/png'), () => {
+    canvas.renderAll();
+    snapshot();
+    toast('<b>Background removed</b>');
+  });
 }
 
 /* Drag & drop */
@@ -777,6 +839,7 @@ function showProps(obj) {
   const isText = obj && obj.type === 'i-text';
   textProps.classList.toggle('show', isText);
   hintBox.classList.toggle('show', !obj);
+  document.getElementById('sb-removebg').style.display = (obj && obj.type === 'image') ? '' : 'none';
   if (isText) {
     document.getElementById('font-select').value = obj.fontFamily;
     document.getElementById('font-size').value = obj.fontSize;
@@ -821,6 +884,7 @@ document.getElementById('sb-dup').onclick = act(o => {
   });
 });
 document.getElementById('sb-del').onclick = act(o => canvas.remove(o));
+document.getElementById('sb-removebg').onclick = act(o => { if (o.type === 'image') removeBackground(o); });
 
 /* ---------- Keyboard ---------- */
 window.addEventListener('keydown', e => {
@@ -929,36 +993,157 @@ document.getElementById('btn-save').onclick = async () => {
   }
 };
 
+/* ---------- Composite renderer (shared by export + 3D preview) ----------
+   base garment SVG → Fabric design layer → shading overlay (multiply),
+   so exported mockups match the on-screen realism exactly. */
+async function buildComposite(scale = 2, bg = null) {
+  const svgToImg = str => new Promise((res, rej) => {
+    const i = new Image();
+    i.onload = () => res(i);
+    i.onerror = rej;
+    i.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(str);
+  });
+  const out = document.createElement('canvas');
+  out.width = STAGE_W * scale;
+  out.height = STAGE_H * scale;
+  const ctx = out.getContext('2d');
+  if (bg) { ctx.fillStyle = bg; ctx.fillRect(0, 0, out.width, out.height); }
+  const baseImg = await svgToImg(new XMLSerializer().serializeToString(holder.querySelector('svg')));
+  ctx.drawImage(baseImg, 0, 0, out.width, out.height);
+  canvas.discardActiveObject();
+  canvas.renderAll();
+  const dImg = new Image();
+  await new Promise((res, rej) => {
+    dImg.onload = res;
+    dImg.onerror = rej;
+    dImg.src = canvas.toDataURL({ format: 'png', multiplier: scale });
+  });
+  ctx.drawImage(dImg, 0, 0, out.width, out.height);
+  if (realismOn) {
+    const ovImg = await svgToImg(teeSVG(currentView, 'overlay'));
+    ctx.globalCompositeOperation = 'multiply';
+    ctx.drawImage(ovImg, 0, 0, out.width, out.height);
+    ctx.globalCompositeOperation = 'source-over';
+  }
+  return out;
+}
+
 /* ---------- Export mockup PNG ---------- */
-document.getElementById('btn-export').onclick = () => {
-  const svgEl = holder.querySelector('svg');
-  const svgStr = new XMLSerializer().serializeToString(svgEl);
-  const img = new Image();
-  img.onload = () => {
-    const scale = 2;
-    const out = document.createElement('canvas');
-    out.width = STAGE_W * scale;
-    out.height = STAGE_H * scale;
-    const ctx = out.getContext('2d');
-    ctx.fillStyle = '#f6f7f9';
-    ctx.fillRect(0, 0, out.width, out.height);
-    ctx.drawImage(img, 0, 0, out.width, out.height);
-    canvas.discardActiveObject();
-    canvas.renderAll();
-    const designURL = canvas.toDataURL({ format: 'png', multiplier: scale });
-    const dImg = new Image();
-    dImg.onload = () => {
-      ctx.drawImage(dImg, 0, 0, out.width, out.height);
-      const a = document.createElement('a');
-      a.download = `mockup-${currentView}-${currentColor[0].toLowerCase().replace(/\s/g,'-')}.png`;
-      a.href = out.toDataURL('image/png');
-      a.click();
-      toast('<b>Mockup exported</b> — high-res PNG downloaded');
-    };
-    dImg.src = designURL;
-  };
-  img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgStr);
+document.getElementById('btn-export').onclick = async () => {
+  const out = await buildComposite(2, '#f6f7f9');
+  const a = document.createElement('a');
+  a.download = `mockup-${currentView}-${currentColor[0].toLowerCase().replace(/\s/g,'-')}.png`;
+  a.href = out.toDataURL('image/png');
+  a.click();
+  toast('<b>Mockup exported</b> — high-res PNG downloaded');
 };
+
+/* ---------- 3D fabric preview (Three.js, lazy-loaded) ---------- */
+const modal3d = document.getElementById('modal-3d');
+let threeState = null;
+function loadThree() {
+  if (window.THREE) return Promise.resolve();
+  return new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
+    s.onload = res;
+    s.onerror = rej;
+    document.head.appendChild(s);
+  });
+}
+
+document.getElementById('btn-3d').onclick = async () => {
+  modal3d.classList.add('show');
+  const status = document.getElementById('three-status');
+  status.style.display = '';
+  status.textContent = 'Building preview…';
+  try {
+    await loadThree();
+    const tex = await buildComposite(2, null);
+    init3D(tex);
+    status.style.display = 'none';
+  } catch (e) {
+    status.textContent = '3D preview unavailable — check your connection';
+  }
+};
+document.getElementById('modal-close').onclick = () => {
+  modal3d.classList.remove('show');
+  if (threeState) threeState.running = false;
+};
+modal3d.addEventListener('click', e => {
+  if (e.target === modal3d) document.getElementById('modal-close').click();
+});
+
+function init3D(texCanvas) {
+  const mount = document.getElementById('three-mount');
+  const W = mount.clientWidth, H = mount.clientHeight;
+  if (!threeState) {
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.setSize(W, H);
+    mount.appendChild(renderer.domElement);
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(38, W / H, 0.1, 50);
+    camera.position.set(0, 0, 6.3);
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x2a2f44, 0.95));
+    const key = new THREE.DirectionalLight(0xffffff, 0.75);
+    key.position.set(2.5, 3, 4);
+    scene.add(key);
+    const rim = new THREE.DirectionalLight(0x88aaff, 0.35);
+    rim.position.set(-3, 1, -2);
+    scene.add(rim);
+    // cloth: displaced plane matching the 560x620 stage aspect
+    const geo = new THREE.PlaneGeometry(3.62, 4.0, 80, 88);
+    const pos = geo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      const u = pos.getX(i) / 3.62 + 0.5, v = pos.getY(i) / 4.0 + 0.5;
+      let z = Math.sin(u * Math.PI) * 0.5;                                   // torso roundness
+      z += Math.sin(v * 8.5 + u * 5) * 0.02 + Math.sin(v * 16 + 1.7) * 0.012; // cloth ripple
+      pos.setZ(i, z);
+    }
+    geo.computeVertexNormals();
+    const mat = new THREE.MeshStandardMaterial({
+      transparent: true, roughness: 0.93, metalness: 0,
+      alphaTest: 0.08, side: THREE.DoubleSide,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    scene.add(mesh);
+    threeState = { renderer, scene, camera, mesh, mat, targetY: 0, dragging: false, t: 0, running: false };
+    let lastX = 0;
+    mount.addEventListener('pointerdown', e => {
+      threeState.dragging = true;
+      lastX = e.clientX;
+      mount.setPointerCapture(e.pointerId);
+    });
+    mount.addEventListener('pointermove', e => {
+      if (!threeState.dragging) return;
+      threeState.targetY = Math.max(-0.85, Math.min(0.85, threeState.targetY + (e.clientX - lastX) * 0.006));
+      lastX = e.clientX;
+    });
+    mount.addEventListener('pointerup', () => threeState.dragging = false);
+  }
+  const tex = new THREE.CanvasTexture(texCanvas);
+  tex.anisotropy = threeState.renderer.capabilities.getMaxAnisotropy();
+  if (threeState.mat.map) threeState.mat.map.dispose();
+  threeState.mat.map = tex;
+  threeState.mat.needsUpdate = true;
+  if (!threeState.running) {
+    threeState.running = true;
+    const loop = () => {
+      if (!threeState.running) return;
+      requestAnimationFrame(loop);
+      threeState.t += 0.016;
+      if (!threeState.dragging) {
+        const idle = Math.sin(threeState.t * 0.5) * 0.25;      // gentle idle sway
+        threeState.targetY += (idle - threeState.targetY) * 0.01;
+      }
+      threeState.mesh.rotation.y += (threeState.targetY - threeState.mesh.rotation.y) * 0.1;
+      threeState.mesh.rotation.x = Math.sin(threeState.t * 0.4) * 0.03;
+      threeState.renderer.render(threeState.scene, threeState.camera);
+    };
+    loop();
+  }
+}
 
 /* ---------- Toast ---------- */
 let toastTimer;
@@ -968,6 +1153,14 @@ function toast(html) {
   t.classList.add('show');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => t.classList.remove('show'), 2800);
+}
+function toastAction(html, label, cb) {
+  const t = document.getElementById('toast');
+  t.innerHTML = html + ` <button class="toast-btn">${label}</button>`;
+  t.querySelector('.toast-btn').onclick = () => { t.classList.remove('show'); cb(); };
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 7000);
 }
 
 /* ---------- Init ---------- */
